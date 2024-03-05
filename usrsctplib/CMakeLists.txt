@@ -34,7 +34,7 @@
 # INCLUDE MODULES AND SETTINGS
 #################################################
 
-set(VERSION "0.9.5.0")
+set(VERSION "0.9.6.0")
 
 # Shared library API and ABI versions
 # Notice: shared library version must be in X.Y.Z format only
