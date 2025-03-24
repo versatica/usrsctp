@@ -7278,7 +7278,9 @@ sctp_sendall_iterator(struct sctp_inpcb *inp, struct sctp_tcb *stcb, void *ptr,
 		} else {
 			m = sctp_get_mbuf_for_msg(sizeof(struct sctp_paramhdr),
 			                          0, M_NOWAIT, 1, MT_DATA);
-			SCTP_BUF_LEN(m) = sizeof(struct sctp_paramhdr);
+			if (m != NULL) {
+				SCTP_BUF_LEN(m) = sizeof(struct sctp_paramhdr);
+			}
 		}
 		if (m != NULL) {
 			struct sctp_paramhdr *ph;
@@ -7475,18 +7477,28 @@ static int
 sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
     struct sctp_nonpad_sndrcvinfo *srcv)
 {
-	int ret;
 	struct sctp_copy_all *ca;
+	struct mbuf *mat;
+	ssize_t sndlen;
+	int ret;
 
+	if (uio != NULL) {
 #if defined(__APPLE__) && !defined(__Userspace__)
 #if defined(APPLE_LEOPARD)
-	if (uio->uio_resid > SCTP_BASE_SYSCTL(sctp_sendall_limit)) {
+		sndlen = uio->uio_resid;
 #else
-	if (uio_resid(uio) > SCTP_BASE_SYSCTL(sctp_sendall_limit)) {
+		sndlen = uio_resid(uio);
 #endif
 #else
-	if (uio->uio_resid > (ssize_t)SCTP_BASE_SYSCTL(sctp_sendall_limit)) {
+		sndlen = uio->uio_resid;
 #endif
+	} else {
+		sndlen = 0;
+		for (mat = m; mat; mat = SCTP_BUF_NEXT(mat)) {
+			sndlen += SCTP_BUF_LEN(mat);
+		}
+	}
+	if (sndlen > (ssize_t)SCTP_BASE_SYSCTL(sctp_sendall_limit)) {
 		/* You must not be larger than the limit! */
 		return (EMSGSIZE);
 	}
@@ -7498,12 +7510,10 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 		return (ENOMEM);
 	}
 	memset(ca, 0, sizeof(struct sctp_copy_all));
-
 	ca->inp = inp;
 	if (srcv != NULL) {
 		memcpy(&ca->sndrcv, srcv, sizeof(struct sctp_nonpad_sndrcvinfo));
 	}
-
 	/* Serialize. */
 	SCTP_INP_WLOCK(inp);
 	if ((inp->sctp_flags & SCTP_PCB_FLAGS_SND_ITERATOR_UP) != 0) {
@@ -7514,23 +7524,14 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 	}
 	inp->sctp_flags |= SCTP_PCB_FLAGS_SND_ITERATOR_UP;
 	SCTP_INP_WUNLOCK(inp);
-
 	/*
 	 * take off the sendall flag, it would be bad if we failed to do
 	 * this :-0
 	 */
 	ca->sndrcv.sinfo_flags &= ~SCTP_SENDALL;
 	/* get length and mbuf chain */
-	if (uio) {
-#if defined(__APPLE__) && !defined(__Userspace__)
-#if defined(APPLE_LEOPARD)
-		ca->sndlen = uio->uio_resid;
-#else
-		ca->sndlen = uio_resid(uio);
-#endif
-#else
-		ca->sndlen = uio->uio_resid;
-#endif
+	ca->sndlen = sndlen;
+	if (uio != NULL) {
 #if defined(__APPLE__) && !defined(__Userspace__)
 		SCTP_SOCKET_UNLOCK(SCTP_INP_SO(inp), 0);
 #endif
@@ -7548,20 +7549,14 @@ sctp_sendall(struct sctp_inpcb *inp, struct uio *uio, struct mbuf *m,
 			return (ENOMEM);
 		}
 	} else {
-		/* Gather the length of the send */
-		struct mbuf *mat;
-
-		ca->sndlen = 0;
-		for (mat = m; mat; mat = SCTP_BUF_NEXT(mat)) {
-			ca->sndlen += SCTP_BUF_LEN(mat);
-		}
+		ca->m = m;
 	}
 	ret = sctp_initiate_iterator(NULL, sctp_sendall_iterator, NULL,
-				     SCTP_PCB_ANY_FLAGS, SCTP_PCB_ANY_FEATURES,
-				     SCTP_ASOC_ANY_STATE,
-				     (void *)ca, 0,
-				     sctp_sendall_completes, inp, 1);
-	if (ret) {
+	                             SCTP_PCB_ANY_FLAGS, SCTP_PCB_ANY_FEATURES,
+	                             SCTP_ASOC_ANY_STATE,
+	                             (void *)ca, 0,
+	                             sctp_sendall_completes, inp, 1);
+	if (ret != 0) {
 		SCTP_INP_WLOCK(inp);
 		inp->sctp_flags &= ~SCTP_PCB_FLAGS_SND_ITERATOR_UP;
 		SCTP_INP_WUNLOCK(inp);
@@ -12199,7 +12194,7 @@ sctp_send_hb(struct sctp_tcb *stcb, struct sctp_nets *net,int so_locked)
 	/* Fill out hb parameter */
 	hb->heartbeat.hb_info.ph.param_type = htons(SCTP_HEARTBEAT_INFO);
 	hb->heartbeat.hb_info.ph.param_length = htons(sizeof(struct sctp_heartbeat_info_param));
-	hb->heartbeat.hb_info.time_value_1 = (uint32_t)now.tv_sec;
+	hb->heartbeat.hb_info.time_value_1 = now.tv_sec;
 	hb->heartbeat.hb_info.time_value_2 = now.tv_usec;
 	/* Did our user request this one, put it in */
 	hb->heartbeat.hb_info.addr_family = (uint8_t)net->ro._l_addr.sa.sa_family;
@@ -15079,9 +15074,9 @@ sctp_v4src_match_nexthop(struct sctp_ifa *sifa, sctp_route_t *ro)
 	mask = (struct sockaddr_in *)(ifa->ifa_netmask);
 	sin = &sifa->address.sin;
 	srcnetaddr.s_addr = (sin->sin_addr.s_addr & mask->sin_addr.s_addr);
-	SCTPDBG(SCTP_DEBUG_OUTPUT1, "match_nexthop4: src address is ");
+	SCTPDBG(SCTP_DEBUG_OUTPUT2, "match_nexthop4: src address is ");
 	SCTPDBG_ADDR(SCTP_DEBUG_OUTPUT2, &sifa->address.sa);
-	SCTPDBG(SCTP_DEBUG_OUTPUT1, "network address is %x\n", srcnetaddr.s_addr);
+	SCTPDBG(SCTP_DEBUG_OUTPUT2, "network address is %x\n", srcnetaddr.s_addr);
 
 #if defined(__FreeBSD__)
 	sin = &ro->ro_nh->gw4_sa;
@@ -15089,13 +15084,13 @@ sctp_v4src_match_nexthop(struct sctp_ifa *sifa, sctp_route_t *ro)
 	sin = (struct sockaddr_in *)ro->ro_rt->rt_gateway;
 #endif
 	gwnetaddr.s_addr = (sin->sin_addr.s_addr & mask->sin_addr.s_addr);
-	SCTPDBG(SCTP_DEBUG_OUTPUT1, "match_nexthop4: nexthop is ");
+	SCTPDBG(SCTP_DEBUG_OUTPUT2, "match_nexthop4: nexthop is ");
 #if defined(__FreeBSD__)
 	SCTPDBG_ADDR(SCTP_DEBUG_OUTPUT2, &ro->ro_nh->gw_sa);
 #else
 	SCTPDBG_ADDR(SCTP_DEBUG_OUTPUT2, ro->ro_rt->rt_gateway);
 #endif
-	SCTPDBG(SCTP_DEBUG_OUTPUT1, "network address is %x\n", gwnetaddr.s_addr);
+	SCTPDBG(SCTP_DEBUG_OUTPUT2, "network address is %x\n", gwnetaddr.s_addr);
 	if (srcnetaddr.s_addr == gwnetaddr.s_addr) {
 		return (1);
 	}
