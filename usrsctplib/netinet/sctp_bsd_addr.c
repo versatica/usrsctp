@@ -101,6 +101,13 @@ sctp_cleanup_itqueue(void)
 void
 sctp_wakeup_iterator(void)
 {
+	if (!SCTP_BASE_VAR(iterator_thread_started)) {
+		// no dedicated thread stated, so execute
+		// iterator work on current thread
+		sctp_iterator_worker();
+		return;
+	}
+
 #if defined(SCTP_PROCESS_LEVEL_LOCKS)
 #if defined(_WIN32)
 	WakeAllConditionVariable(&sctp_it_ctl.iterator_wakeup);
@@ -170,23 +177,40 @@ sctp_iterator_thread(void *v SCTP_UNUSED)
 }
 
 void
+#if defined(__Userspace__)
+sctp_startup_iterator(int start_threads)
+#else
 sctp_startup_iterator(void)
+#endif
 {
 	if (sctp_it_ctl.thread_proc) {
 		/* You only get one */
 		return;
 	}
+	printf("---- sctp_startup_iterator()\n");
+	fflush(stdout);
 	/* Initialize global locks here, thus only once. */
 	SCTP_ITERATOR_LOCK_INIT();
 	SCTP_IPI_ITERATOR_WQ_INIT();
 	TAILQ_INIT(&sctp_it_ctl.iteratorhead);
+
 #if defined(__Userspace__)
+	if (!start_threads) {
+		return;
+	}
+#endif
+
+#if defined(__Userspace__)
+	printf("---- sctp_startup_iterator() | defined(__Userspace__)\n");
+	fflush(stdout);
 	if (sctp_userspace_thread_create(&sctp_it_ctl.thread_proc, &sctp_iterator_thread)) {
 		SCTP_PRINTF("ERROR: Creating sctp_iterator_thread failed.\n");
 	} else {
 		SCTP_BASE_VAR(iterator_thread_started) = 1;
 	}
 #elif defined(__FreeBSD__)
+	printf("---- sctp_startup_iterator() | defined(__FreeBSD__)\n");
+	fflush(stdout);
 	kproc_create(sctp_iterator_thread,
 	             (void *)NULL,
 	             &sctp_it_ctl.thread_proc,
@@ -194,6 +218,8 @@ sctp_startup_iterator(void)
 	             SCTP_KTHREAD_PAGES,
 	             SCTP_KTRHEAD_NAME);
 #elif defined(__APPLE__)
+	printf("---- sctp_startup_iterator() | defined(__APPLE__)\n");
+	fflush(stdout);
 	kernel_thread_start((thread_continue_t)sctp_iterator_thread, NULL, &sctp_it_ctl.thread_proc);
 #endif
 }

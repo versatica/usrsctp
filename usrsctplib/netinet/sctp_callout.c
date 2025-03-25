@@ -55,6 +55,7 @@
 #include <netinet/sctp_pcb.h>
 #endif
 #include <netinet/sctputil.h>
+#include <inttypes.h>  // PRIu64, etc
 
 /*
  * Callout/Timer routines for OS that doesn't have them
@@ -153,6 +154,9 @@ sctp_os_timer_stop(sctp_os_timer_t *c)
 int64_t
 sctp_get_next_tick(void)
 {
+	// printf("----- usrsctp | sctp_get_next_tick()\n");
+	// fflush(stdout);
+
 	int64_t ret;
 	sctp_os_timer_t *c;
 
@@ -164,6 +168,8 @@ sctp_get_next_tick(void)
 			uint32_t delta = c->c_time - ticks;
 			min_delta = (delta < min_delta) ? delta : min_delta;
 			c = TAILQ_NEXT(c, tqe);
+			// printf("----- usrsctp | sctp_get_next_tick() [delta:%" PRIu32 ", min_delta:%" PRId32 "]\n", delta, min_delta);
+			// fflush(stdout);
 		}
 		ret = min_delta;
 	} else {
@@ -171,12 +177,18 @@ sctp_get_next_tick(void)
 	}
 	SCTP_TIMERQ_UNLOCK();
 
+	// printf("----- usrsctp | sctp_get_next_tick() [ret:%" PRId64 "]\n", ret);
+	// fflush(stdout);
+
 	return ret;
 }
 
 void
 sctp_handle_tick(uint32_t elapsed_ticks)
 {
+	// printf("----- usrsctp | sctp_handle_tick()\n");
+	// fflush(stdout);
+
 	sctp_os_timer_t *c;
 	void (*c_func)(void *);
 	void *c_arg;

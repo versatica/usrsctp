@@ -6591,7 +6591,12 @@ sctp_pcb_init(void)
 	(void)pthread_cond_init(&sctp_it_ctl.iterator_wakeup, NULL);
 #endif
 #endif
+
+#if defined(__Userspace__)
+	sctp_startup_iterator(start_threads);
+#else
 	sctp_startup_iterator();
+#endif
 
 #if defined(__FreeBSD__) && !defined(__Userspace__)
 #if defined(SCTP_MCORE_INPUT) && defined(SMP)
@@ -7933,6 +7938,9 @@ sctp_initiate_iterator(inp_func inpf,
 		       struct sctp_inpcb *s_inp,
 		       uint8_t chunk_output_off)
 {
+	printf("---- sctp_initiate_iterator()\n");
+	fflush(stdout);
+
 	struct sctp_iterator *it = NULL;
 
 	if (af == NULL) {

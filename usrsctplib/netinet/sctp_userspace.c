@@ -61,6 +61,9 @@ sctp_create_thread_adapter(void *arg) {
 int
 sctp_userspace_thread_create(userland_thread_t *thread, start_routine_t start_routine)
 {
+	printf("---- sctp_userspace_thread_create()\n");
+	fflush(stdout);
+
 	*thread = CreateThread(NULL, 0, sctp_create_thread_adapter,
 			       (void *)start_routine, 0, NULL);
 	if (*thread == NULL)
@@ -76,6 +79,9 @@ sctp_userspace_thread_create(userland_thread_t *thread, start_routine_t start_ro
 int
 sctp_userspace_thread_create(userland_thread_t *thread, start_routine_t start_routine)
 {
+	printf("---- sctp_userspace_thread_create()\n");
+	fflush(stdout);
+
 	return pthread_create(thread, NULL, start_routine, NULL);
 }
 #endif
@@ -83,6 +89,9 @@ sctp_userspace_thread_create(userland_thread_t *thread, start_routine_t start_ro
 void
 sctp_userspace_set_threadname(const char *name)
 {
+	printf("---- sctp_userspace_set_threadname('%s')\n", name);
+	fflush(stdout);
+
 #if defined(__APPLE__)
 	pthread_setname_np(name);
 #endif
