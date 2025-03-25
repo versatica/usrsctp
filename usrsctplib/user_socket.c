@@ -3333,6 +3333,9 @@ usrsctp_conninput(void *addr, const void *buffer, size_t length, uint8_t ecn_bit
 int64_t
 usrsctp_get_timeout(void)
 {
+	// printf("----- usrsctp | usrsctp_get_timeout()\n");
+	// fflush(stdout);
+
 	return sctp_get_next_tick();
 }
 
